@@ -1,0 +1,742 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Simple Web IDE</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <!-- Markdown-it library for rendering Markdown -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/markdown-it/12.3.2/markdown-it.min.js"></script>
+    
+    <!-- CodeMirror Assets -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.15/codemirror.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.15/codemirror.min.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.15/theme/dracula.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.15/mode/xml/xml.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.15/mode/javascript/javascript.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.15/mode/css/css.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.15/mode/htmlmixed/htmlmixed.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/codemirror/5.65.15/mode/markdown/markdown.min.js"></script>
+
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+        }
+        .file-item.active {
+            background-color: #4A5568; /* bg-gray-700 */
+        }
+        .resizer-x {
+            width: 5px;
+            cursor: col-resize;
+            background-color: #1F2937; /* bg-gray-800 */
+            flex-shrink: 0;
+            transition: background-color 0.2s;
+        }
+        .resizer-x:hover {
+            background-color: #374151; /* bg-gray-700 */
+        }
+        body.is-resizing {
+            cursor: col-resize;
+            user-select: none;
+        }
+        body.is-resizing iframe {
+            pointer-events: none;
+        }
+        .drag-over {
+            background-color: #3b82f6; /* bg-blue-500 */
+            opacity: 0.5;
+        }
+        .folder-arrow {
+            transition: transform 0.2s;
+        }
+        .folder-arrow.collapsed {
+            transform: rotate(-90deg);
+        }
+        #context-menu {
+            position: absolute;
+            z-index: 1000;
+            display: none;
+        }
+        /* CodeMirror styles */
+        .CodeMirror {
+            height: 100%;
+            font-family: 'Fira Code', 'monospace';
+            font-size: 14px;
+        }
+    </style>
+</head>
+<body class="text-white h-screen overflow-hidden">
+
+    <div class="flex h-full bg-gray-900">
+        <!-- Left Panel Wrapper -->
+        <div id="left-panel" class="flex h-full" style="width: 50%;">
+            <!-- File Explorer -->
+            <div id="file-explorer" class="w-64 flex-shrink-0 bg-gray-800 flex flex-col border-r border-gray-700">
+                <div class="p-4 flex-shrink-0 border-b border-gray-700">
+                    <div class="flex justify-between items-center">
+                        <h2 class="text-lg font-semibold">File Explorer</h2>
+                        <div class="flex items-center space-x-2">
+                             <!-- Settings Button -->
+                            <button id="settings-btn" class="p-1 rounded-md hover:bg-gray-700 transition duration-300" title="Settings">
+                                <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+                            </button>
+                            <!-- New Item Dropdown -->
+                            <div class="relative" id="new-item-dropdown">
+                                <button id="new-item-btn" class="bg-indigo-600 hover:bg-indigo-700 text-white font-bold py-1 px-3 rounded-lg transition duration-300 flex items-center text-sm">
+                                    <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6v6m0 0v6m0-6h6m-6 0H6"></path></svg>
+                                    New
+                                </button>
+                                <div id="new-item-menu" class="hidden absolute right-0 mt-2 w-32 bg-gray-700 rounded-md shadow-lg z-10">
+                                    <a href="#" id="add-file-btn" class="block px-4 py-2 text-sm text-gray-200 hover:bg-gray-600 rounded-t-md">New File</a>
+                                    <a href="#" id="add-folder-btn" class="block px-4 py-2 text-sm text-gray-200 hover:bg-gray-600 rounded-b-md">New Folder</a>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div id="file-explorer-container" class="flex-grow overflow-y-auto p-2">
+                    <ul id="file-list">
+                        <!-- File list will be populated by JavaScript -->
+                    </ul>
+                </div>
+            </div>
+
+            <!-- Vertical Resizer -->
+            <div id="resizer-vertical" class="resizer-x"></div>
+
+            <!-- Editor -->
+            <div class="flex-grow flex flex-col bg-gray-900">
+                 <div id="editor-header" class="p-2 text-sm text-gray-400 border-b border-gray-700 flex-shrink-0 flex justify-between items-center">
+                    <span id="editor-filename-display"></span>
+                    <button id="prettify-btn" class="p-1 rounded-md hover:bg-gray-700 transition duration-300" title="Prettify Code">
+                        <svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 3v4M3 5h4M6 17v4m-2-2h4m5-16l2.286 6.857L21 12l-5.714 2.143L13 21l-2.286-6.857L5 12l5.714-2.143L13 3z"/></svg>
+                    </button>
+                 </div>
+                 <div id="editor" class="flex-grow w-full h-full"></div>
+            </div>
+        </div>
+
+        <!-- Main Horizontal Resizer -->
+        <div id="resizer-main" class="resizer-x"></div>
+
+        <!-- Right Panel: Preview -->
+        <div id="right-panel" class="flex-grow h-full bg-white">
+            <iframe id="preview" class="w-full h-full border-none"></iframe>
+        </div>
+    </div>
+
+    <!-- Notification Container -->
+    <div id="notification-container" class="fixed bottom-5 right-5 z-50 w-64"></div>
+
+    <!-- Context Menu -->
+    <div id="context-menu" class="w-48 bg-gray-800 rounded-md shadow-lg border border-gray-700 text-sm">
+        <ul class="py-1">
+            <li id="ctx-new-file-li"><a href="#" id="ctx-new-file-btn" class="flex items-center px-3 py-2 text-gray-200 hover:bg-gray-700">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 13h6m-3-3v6m5 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 S0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+                New File
+            </a></li>
+            <li id="ctx-new-folder-li"><a href="#" id="ctx-new-folder-btn" class="flex items-center px-3 py-2 text-gray-200 hover:bg-gray-700">
+                 <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 13h6m-3-3v6m-9 1V7a2 2 0 012-2h4l2 2h4a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2z" /></svg>
+                New Folder
+            </a></li>
+             <li id="ctx-rename-li"><a href="#" id="ctx-rename-btn" class="flex items-center px-3 py-2 text-gray-200 hover:bg-gray-700">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
+                Rename
+            </a></li>
+            <li id="ctx-delete-li"><a href="#" id="ctx-delete-btn" class="flex items-center px-3 py-2 text-red-400 hover:bg-red-500 hover:text-white rounded-b-md">
+                <svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                Delete
+            </a></li>
+        </ul>
+    </div>
+
+    <!-- Confirmation Modal -->
+    <div id="confirm-modal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden">
+        <div class="bg-gray-800 rounded-lg shadow-xl p-6 w-96">
+            <h3 id="modal-title" class="text-lg font-bold mb-4">Confirm Deletion</h3>
+            <p id="modal-body" class="mb-6 text-gray-300 text-sm">Are you sure you want to delete this item? This action cannot be undone.</p>
+            <div class="flex justify-end space-x-4">
+                <button id="modal-cancel-btn" class="px-4 py-2 rounded-lg bg-gray-600 hover:bg-gray-700 transition duration-300 text-sm font-semibold">Cancel</button>
+                <button id="modal-confirm-btn" class="px-4 py-2 rounded-lg bg-red-600 hover:bg-red-700 transition duration-300 text-sm font-semibold">Confirm Delete</button>
+            </div>
+        </div>
+    </div>
+
+     <!-- Settings Modal -->
+    <div id="settings-modal" class="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 hidden">
+        <div class="bg-gray-800 rounded-lg shadow-xl p-6 w-96">
+            <h3 class="text-lg font-bold mb-6">Settings</h3>
+            <div class="flex items-center justify-between mb-6">
+                 <label for="tab-size-input" class="text-gray-300">Tab Size (spaces):</label>
+                 <input type="number" id="tab-size-input" min="1" max="8" class="bg-gray-700 text-white rounded-md w-20 p-2 text-center focus:outline-none focus:ring-2 focus:ring-indigo-500">
+            </div>
+            <div class="flex justify-end space-x-4">
+                <button id="settings-cancel-btn" class="px-4 py-2 rounded-lg bg-gray-600 hover:bg-gray-700 transition duration-300 text-sm font-semibold">Cancel</button>
+                <button id="settings-save-btn" class="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 transition duration-300 text-sm font-semibold">Save</button>
+            </div>
+        </div>
+    </div>
+
+
+    <script>
+        // --- DOM Elements ---
+        const editorContainer = document.getElementById('editor');
+        const editorHeader = document.getElementById('editor-header');
+        const editorFilenameDisplay = document.getElementById('editor-filename-display');
+        const preview = document.getElementById('preview');
+        const fileList = document.getElementById('file-list');
+        const fileExplorerContainer = document.getElementById('file-explorer-container');
+        const addFileBtn = document.getElementById('add-file-btn');
+        const addFolderBtn = document.getElementById('add-folder-btn');
+        const newItemBtn = document.getElementById('new-item-btn');
+        const newItemMenu = document.getElementById('new-item-menu');
+        const contextMenu = document.getElementById('context-menu');
+        const confirmModal = document.getElementById('confirm-modal');
+        const settingsModal = document.getElementById('settings-modal');
+        const settingsBtn = document.getElementById('settings-btn');
+        const tabSizeInput = document.getElementById('tab-size-input');
+        const prettifyBtn = document.getElementById('prettify-btn');
+        
+        const md = window.markdownit();
+        let codeEditor;
+
+        // --- State ---
+        let fileSystem = {
+            'index.html': { type: 'file', language: 'html', content: `<!DOCTYPE html>\n<html lang="en">\n<head>\n    <meta charset="UTF-8">\n    <title>My Awesome Site</title>\n    <link rel="stylesheet" href="assets/style.css">\n</head>\n<body>\n    <h1>Welcome to the Live Preview!</h1>\n    <p>Edit the files on the left to see changes here.</p>\n    <button onclick="showMessage()">Click Me</button>\n    <script src="src/script.js"><\/script>\n</body>\n</html>` },
+            'assets': { type: 'folder', isOpen: true, children: {
+                'style.css': { type: 'file', language: 'css', content: `body {\n    font-family: sans-serif;\n    background-color: #f0f0f0;\n    color: #333;\n    display: flex;\n    justify-content: center;\n    align-items: center;\n    height: 100vh;\n    text-align: center;\n}\n\nh1 {\n    color: #1a2a6c;\n}\n\nbutton {\n    background-color: #b21f1f;\n    color: white;\n    border: none;\n    padding: 10px 20px;\n    border-radius: 5px;\n    cursor: pointer;\n    font-size: 16px;\n    transition: background-color: 0.3s;\n}\n\nbutton:hover {\n    background-color: #f64f59;\n}` }
+            }},
+            'src': { type: 'folder', isOpen: true, children: {
+                'script.js': { type: 'file', language: 'javascript', content: `function showMessage() {\n    const h1 = document.querySelector('h1');\n    if (h1) {\n        h1.textContent = 'Hello from JavaScript!';\n    } else {\n        console.log('Hello from your script.js file!');\n    }\n}` }
+            }},
+            'README.md': { type: 'file', language: 'markdown', content: `# Welcome!\n\nThis is a simple web-based IDE.\n\n- Edit HTML, CSS, and JS files to build a webpage.\n- Edit Markdown files to see them rendered.\n- All changes are reflected in the **live preview** on the right.\n\nEnjoy creating!` }
+        };
+
+        let activeFilePath = 'index.html';
+        let contextMenuPath = null;
+        let tabSize = 4;
+
+        // --- ICONS ---
+        const icons = {
+            html: `<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2 text-orange-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 20l4-16m4 4l4 4-4 4M6 16l-4-4 4-4" /></svg>`,
+            css: `<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2 text-blue-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21a4 4 0 01-4-4V5a2 2 0 012-2h4a2 2 0 012 2v12a4 4 0 01-4 4zm0 0h12a2 2 0 002-2v-4a2 2 0 00-2-2h-2.343M11 7.343l1.657-1.657a2 2 0 012.828 0l2.829 2.829a2 2 0 010 2.828l-8.486 8.485M7 17h.01" /></svg>`,
+            javascript: `<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2 text-yellow-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9.663 17h4.673M12 3v1m6.364 1.636l-.707.707M21 12h-1M4 12H3m3.343-5.657l-.707-.707m2.828 9.9a5 5 0 117.072 0l-.548.547A3.374 3.374 0 0014 18.469V19a2 2 0 11-4 0v-.531c0-.895-.356-1.754-.988-2.386l-.548-.547z" /></svg>`,
+            markdown: `<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2 text-gray-300" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>`,
+            plaintext: `<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M7 21h10a2 2 0 002-2V9.414a1 1 0 00-.293-.707l-5.414-5.414A1 1 0 0012.586 3H7a2 2 0 00-2 2v14a2 2 0 002 2z" /></svg>`,
+            folder: `<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2 text-yellow-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 7v10a2 2 0 002 2h14a2 2 0 002-2V9a2 2 0 00-2-2h-6l-2-2H5a2 2 0 00-2 2z"></path></svg>`,
+            folderOpen: `<svg xmlns="http://www.w3.org/2000/svg" class="h-5 w-5 mr-2 text-yellow-500" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 19a2 2 0 01-2-2V7a2 2 0 012-2h4l2 2h4a2 2 0 012 2v1M5 19h14a2 2 0 002-2v-5a2 2 0 00-2-2H9a2 2 0 00-2 2v5a2 2 0 01-2 2z"></path></svg>`,
+        };
+        const folderArrowIcon = `<svg xmlns="http://www.w3.org/2000/svg" class="h-4 w-4 mr-1 text-gray-400 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7" /></svg>`;
+
+        // --- File System Utils ---
+        const getParent = (path) => {
+            const parts = path.split('/').filter(p => p);
+            if (parts.length <= 1) return fileSystem; // Parent is the root
+            let current = fileSystem;
+            for (let i = 0; i < parts.length - 1; i++) {
+                if (!current[parts[i]] || current[parts[i]].type !== 'folder') return null;
+                current = current[parts[i]].children;
+            }
+            return current;
+        };
+        const getItem = (path) => {
+            if (!path) return null;
+            const parts = path.split('/').filter(p => p);
+            let current = fileSystem;
+            for (let i = 0; i < parts.length; i++) {
+                if (!current || !current[parts[i]]) return null;
+                current = i === parts.length - 1 ? current[parts[i]] : current[parts[i]].children;
+            }
+            return current;
+        };
+        const getLanguageFromExtension = (filename) => {
+            const extension = filename.split('.').pop();
+            switch(extension) {
+                case 'html': return 'html';
+                case 'css': return 'css';
+                case 'js': return 'javascript';
+                case 'md': return 'markdown';
+                default: return 'plaintext';
+            }
+        };
+
+        // --- Recursive Rendering ---
+        function renderFileExplorer() {
+            fileList.innerHTML = '';
+            const sortedKeys = Object.keys(fileSystem).sort((a, b) => {
+                const itemA = fileSystem[a];
+                const itemB = fileSystem[b];
+                if (itemA.type === 'folder' && itemB.type === 'file') return -1;
+                if (itemA.type === 'file' && itemB.type === 'folder') return 1;
+                return a.localeCompare(b);
+            });
+            sortedKeys.forEach(key => buildTree(fileSystem[key], key, 0, fileList, key));
+        }
+
+        function buildTree(item, name, depth, parentElement, path) {
+            const li = document.createElement('li');
+            li.draggable = true;
+            li.dataset.path = path;
+            li.className = 'file-item rounded-md';
+
+            const contentDiv = document.createElement('div');
+            contentDiv.className = `flex items-center p-1 cursor-pointer hover:bg-gray-700 transition duration-200 rounded-md ${path === activeFilePath ? 'active' : ''}`;
+            contentDiv.style.paddingLeft = `${depth * 16}px`;
+
+            if (item.type === 'folder') {
+                contentDiv.innerHTML = `<span class="folder-arrow ${!item.isOpen ? 'collapsed' : ''}">${folderArrowIcon}</span> ${item.isOpen ? icons.folderOpen : icons.folder} <span class="item-name">${name}</span>`;
+                contentDiv.onclick = () => toggleFolder(path);
+                li.appendChild(contentDiv);
+
+                if (item.isOpen) {
+                    const ul = document.createElement('ul');
+                    const sortedChildKeys = Object.keys(item.children).sort((a, b) => {
+                        const childA = item.children[a];
+                        const childB = item.children[b];
+                        if (childA.type === 'folder' && childB.type === 'file') return -1;
+                        if (childA.type === 'file' && childB.type === 'folder') return 1;
+                        return a.localeCompare(b);
+                    });
+                    sortedChildKeys.forEach(key => buildTree(item.children[key], key, depth + 1, ul, `${path}/${key}`));
+                    li.appendChild(ul);
+                }
+            } else { // It's a file
+                contentDiv.innerHTML = `${icons[item.language] || icons.plaintext} <span class="item-name">${name}</span>`;
+                contentDiv.onclick = () => selectFile(path);
+                li.appendChild(contentDiv);
+            }
+            
+            li.addEventListener('dragstart', handleDragStart);
+            li.addEventListener('dragover', handleDragOver);
+            li.addEventListener('dragleave', handleDragLeave);
+            li.addEventListener('drop', handleDrop);
+            li.addEventListener('contextmenu', handleContextMenu);
+            parentElement.appendChild(li);
+        }
+
+        // --- Event Handlers ---
+        function toggleFolder(path) {
+            const folder = getItem(path);
+            if (folder && folder.type === 'folder') {
+                folder.isOpen = !folder.isOpen;
+                renderFileExplorer();
+            }
+        }
+        function selectFile(path) {
+            const file = getItem(path);
+            if (!file || file.type !== 'file') return;
+            activeFilePath = path;
+            editorFilenameDisplay.textContent = `Editing: ${path}`;
+            codeEditor.setValue(file.content || '');
+            
+            let mode = 'text/plain';
+            switch(file.language) {
+                case 'html': mode = 'htmlmixed'; break;
+                case 'css': mode = 'css'; break;
+                case 'javascript': mode = 'javascript'; break;
+                case 'markdown': mode = 'markdown'; break;
+            }
+            codeEditor.setOption('mode', mode);
+
+            renderFileExplorer();
+            renderPreview();
+            codeEditor.focus();
+        }
+
+        function handleDragStart(e) {
+            e.stopPropagation();
+            e.dataTransfer.setData('text/plain', e.target.closest('.file-item').dataset.path);
+            e.dataTransfer.effectAllowed = 'move';
+        }
+        function handleDragOver(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            const targetElement = e.target.closest('.file-item');
+            if (!targetElement) return;
+            const targetPath = targetElement.dataset.path;
+            const targetItem = getItem(targetPath);
+            if (targetItem && targetItem.type === 'folder') {
+                targetElement.classList.add('drag-over');
+            }
+        }
+        function handleDragLeave(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            const targetElement = e.target.closest('.file-item');
+            if (targetElement) {
+                targetElement.classList.remove('drag-over');
+            }
+        }
+        function handleDrop(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            const targetElement = e.target.closest('.file-item');
+            if (!targetElement) return;
+            targetElement.classList.remove('drag-over');
+            const sourcePath = e.dataTransfer.getData('text/plain');
+            const targetPath = targetElement.dataset.path;
+            const sourceItem = getItem(sourcePath);
+            const targetItem = getItem(targetPath);
+            if (!sourceItem || !targetItem || targetItem.type !== 'folder' || sourcePath === targetPath) return;
+            const sourceParent = getParent(sourcePath);
+            const sourceName = sourcePath.split('/').pop();
+            if (targetPath.startsWith(sourcePath + '/')) {
+                 showNotification('Cannot move a folder into itself.', 'error');
+                return;
+            }
+             if (targetItem.children[sourceName]) {
+                showNotification(`An item named "${sourceName}" already exists in this folder.`, 'error');
+                return;
+            }
+            delete sourceParent[sourceName];
+            targetItem.children[sourceName] = sourceItem;
+            if (activeFilePath && activeFilePath.startsWith(sourcePath)) {
+                activeFilePath = activeFilePath.replace(sourcePath, `${targetPath}/${sourceName}`);
+            }
+            renderFileExplorer();
+            renderPreview(); // <-- FIX: Re-render preview on drop
+        }
+
+        // --- New Dropdown & Settings Logic ---
+        newItemBtn.addEventListener('click', () => newItemMenu.classList.toggle('hidden'));
+        document.addEventListener('click', (e) => {
+            if (!document.getElementById('new-item-dropdown').contains(e.target)) {
+                newItemMenu.classList.add('hidden');
+            }
+            if (!contextMenu.contains(e.target)) {
+                 contextMenu.style.display = 'none';
+            }
+        });
+
+        settingsBtn.addEventListener('click', () => {
+            tabSizeInput.value = tabSize;
+            settingsModal.classList.remove('hidden');
+        });
+        document.getElementById('settings-save-btn').addEventListener('click', () => {
+            const newSize = parseInt(tabSizeInput.value, 10);
+            if (newSize >= 1 && newSize <= 8) {
+                tabSize = newSize;
+                if (codeEditor) {
+                    codeEditor.setOption('indentUnit', tabSize);
+                }
+                settingsModal.classList.add('hidden');
+            } else {
+                showNotification('Tab size must be between 1 and 8.', 'error');
+            }
+        });
+        document.getElementById('settings-cancel-btn').addEventListener('click', () => {
+            settingsModal.classList.add('hidden');
+        });
+
+        function showCreationInput(type, parentPath = '') {
+            const existingInput = document.getElementById('creation-input-li');
+            if (existingInput) existingInput.remove();
+            const li = document.createElement('li');
+            li.id = 'creation-input-li';
+            li.className = 'file-item rounded-md p-1';
+            const depth = parentPath.split('/').filter(Boolean).length;
+            li.style.paddingLeft = `${depth * 16}px`;
+            const icon = type === 'folder' ? icons.folder : icons.plaintext;
+            li.innerHTML = `<div class="flex items-center">${icon}<input type="text" id="creation-input" class="bg-gray-600 text-white text-sm rounded px-1 w-full focus:outline-none" placeholder="Enter name..."></div>`;
+            let parentElement = fileList;
+            if(parentPath){
+                const parentLi = document.querySelector(`li[data-path="${parentPath}"]`);
+                if(parentLi) parentElement = parentLi.querySelector('ul') || parentLi;
+            }
+            parentElement.prepend(li);
+            const input = document.getElementById('creation-input');
+            input.focus();
+
+            let hasBeenHandled = false;
+            const handleFinish = (shouldCreate) => {
+                if (hasBeenHandled) return;
+                hasBeenHandled = true;
+                const name = input.value.trim();
+                li.remove();
+                if (!shouldCreate || !name) return;
+                const parentContainer = parentPath ? getItem(parentPath) : { type:'folder', children: fileSystem };
+                if (!parentContainer || parentContainer.type !== 'folder' || parentContainer.children[name]) {
+                    showNotification('Invalid path or name already exists.', 'error');
+                    return;
+                }
+                if (type === 'folder') {
+                    parentContainer.children[name] = { type: 'folder', isOpen: true, children: {} };
+                    renderFileExplorer();
+                } else {
+                    const language = getLanguageFromExtension(name);
+                    parentContainer.children[name] = { type: 'file', language, content: '' };
+                    const newPath = parentPath ? `${parentPath}/${name}` : name;
+                    selectFile(newPath);
+                }
+            };
+            input.addEventListener('keydown', e => {
+                if (e.key === 'Enter') handleFinish(true);
+                if (e.key === 'Escape') handleFinish(false);
+            });
+            input.addEventListener('blur', () => handleFinish(false));
+        }
+
+        addFileBtn.addEventListener('click', () => {
+            newItemMenu.classList.add('hidden');
+            showCreationInput('file', '');
+        });
+
+        addFolderBtn.addEventListener('click', () => {
+            newItemMenu.classList.add('hidden');
+            showCreationInput('folder', '');
+        });
+        
+        // --- Preview Rendering ---
+        function renderPreview() {
+            const indexHtmlFile = getItem('index.html');
+            if (!indexHtmlFile) {
+                 preview.srcdoc = `<html><body style="color: black; font-family: sans-serif;">index.html not found.</body></html>`;
+                return;
+            }
+            let finalHtml = indexHtmlFile.content;
+            const linkRegex = /<link\s+.*?href="([^"]+)"[^>]*>/g;
+            finalHtml = finalHtml.replace(linkRegex, (match, path) => {
+                const cssFile = getItem(path);
+                return cssFile ? `<style>\n${cssFile.content}\n</style>` : `<!-- Link to ${path} could not be resolved. -->`;
+            });
+            const scriptRegex = /<script\s+.*?src="([^"]+)"[^>]*><\/script>/g;
+             finalHtml = finalHtml.replace(scriptRegex, (match, path) => {
+                const jsFile = getItem(path);
+                return jsFile ? `<script>\n${jsFile.content}\n<\/script>` : `<!-- Script for ${path} could not be resolved. -->`;
+            });
+            
+            const activeFile = getItem(activeFilePath);
+            if (activeFile && activeFile.language === 'markdown') {
+                const renderedHtml = md.render(activeFile.content);
+                preview.srcdoc = `<!DOCTYPE html><html><head><style>body { font-family: sans-serif; padding: 2rem; color: #333; } code { background: #eee; padding: 2px 4px; border-radius: 3px; } pre { background: #eee; padding: 1rem; border-radius: 5px; }</style></head><body>${renderedHtml}</body></html>`;
+            } else {
+                 preview.srcdoc = finalHtml;
+            }
+        }
+
+        // --- Context Menu, Rename & Delete Logic ---
+        fileExplorerContainer.addEventListener('contextmenu', (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            contextMenuPath = ''; // Root
+            showContextMenu(e, { isRoot: true });
+        });
+
+        function handleContextMenu(e) {
+            e.preventDefault();
+            e.stopPropagation();
+            const targetElement = e.target.closest('.file-item');
+            contextMenuPath = targetElement.dataset.path;
+            const item = getItem(contextMenuPath);
+            showContextMenu(e, { isFile: item.type === 'file' });
+        }
+
+        function showContextMenu(e, { isFile = false, isRoot = false }) {
+            document.getElementById('ctx-new-file-li').style.display = isFile ? 'none' : 'block';
+            document.getElementById('ctx-new-folder-li').style.display = isFile ? 'none' : 'block';
+            document.getElementById('ctx-rename-li').style.display = isRoot ? 'none' : 'block';
+            document.getElementById('ctx-delete-li').style.display = isRoot ? 'none' : 'block';
+            contextMenu.style.top = `${e.clientY}px`;
+            contextMenu.style.left = `${e.clientX}px`;
+            contextMenu.style.display = 'block';
+        }
+
+        document.getElementById('ctx-delete-btn').addEventListener('click', () => {
+            contextMenu.style.display = 'none';
+            if (contextMenuPath === null) return;
+            const itemName = contextMenuPath.split('/').pop();
+            document.getElementById('modal-title').textContent = `Delete '${itemName}'?`;
+            document.getElementById('modal-body').textContent = `Are you sure you want to delete '${contextMenuPath}'? This action cannot be undone.`;
+            confirmModal.classList.remove('hidden');
+        });
+        
+        document.getElementById('ctx-rename-btn').addEventListener('click', () => {
+            contextMenu.style.display = 'none';
+            if (contextMenuPath === null) return;
+            const li = document.querySelector(`li[data-path="${contextMenuPath}"]`);
+            const nameSpan = li.querySelector('.item-name');
+            const originalName = nameSpan.textContent;
+            const input = document.createElement('input');
+            input.type = 'text';
+            input.value = originalName;
+            input.className = 'bg-gray-600 text-white text-sm rounded px-1 w-full focus:outline-none';
+            nameSpan.replaceWith(input);
+            input.focus();
+            input.select();
+
+            let hasBeenHandled = false;
+            const handleFinish = (shouldRename) => {
+                if (hasBeenHandled) return;
+                hasBeenHandled = true;
+                const newName = input.value.trim();
+                if (!shouldRename || newName === originalName || !newName) {
+                    input.replaceWith(nameSpan);
+                    return;
+                }
+                const parent = getParent(contextMenuPath);
+                const parentPath = contextMenuPath.substring(0, contextMenuPath.lastIndexOf('/'));
+                const newPath = parentPath ? `${parentPath}/${newName}` : newName;
+                if ((parent[newName] || parent.children?.[newName])) {
+                     showNotification(`An item named "${newName}" already exists.`, 'error');
+                     input.replaceWith(nameSpan);
+                     return;
+                }
+                const item = getItem(contextMenuPath);
+                item.language = getLanguageFromExtension(newName);
+                delete (parent.children || parent)[originalName];
+                (parent.children || parent)[newName] = item;
+                if (activeFilePath && activeFilePath.startsWith(contextMenuPath)) {
+                    activeFilePath = activeFilePath.replace(contextMenuPath, newPath);
+                    if (getItem(activeFilePath)) editorFilenameDisplay.textContent = `Editing: ${activeFilePath}`;
+                }
+                renderFileExplorer();
+                renderPreview();
+            };
+            input.addEventListener('keydown', e => {
+                if (e.key === 'Enter') handleFinish(true);
+                if (e.key === 'Escape') handleFinish(false);
+            });
+            input.addEventListener('blur', () => handleFinish(true));
+        });
+
+        document.getElementById('ctx-new-file-btn').addEventListener('click', () => {
+            contextMenu.style.display = 'none';
+            showCreationInput('file', contextMenuPath);
+        });
+        document.getElementById('ctx-new-folder-btn').addEventListener('click', () => {
+            contextMenu.style.display = 'none';
+            showCreationInput('folder', contextMenuPath);
+        });
+        document.getElementById('modal-cancel-btn').addEventListener('click', () => {
+            confirmModal.classList.add('hidden');
+            contextMenuPath = null;
+        });
+        document.getElementById('modal-confirm-btn').addEventListener('click', () => {
+            if (contextMenuPath === null) return;
+            const parent = getParent(contextMenuPath);
+            const name = contextMenuPath.split('/').pop();
+            delete (parent.children || parent)[name];
+            if (activeFilePath && activeFilePath.startsWith(contextMenuPath)) {
+                activeFilePath = null;
+                codeEditor.setValue('');
+                editorFilenameDisplay.textContent = '';
+            }
+            confirmModal.classList.add('hidden');
+            renderFileExplorer();
+            renderPreview();
+            contextMenuPath = null;
+        });
+
+        // --- Notification ---
+        function showNotification(message, type = 'info') {
+            const container = document.getElementById('notification-container');
+            const notification = document.createElement('div');
+            const bgColor = type === 'error' ? 'bg-red-600' : 'bg-indigo-600';
+            notification.className = `p-3 rounded-lg text-white shadow-lg mb-2 text-sm ${bgColor} transform transition-all duration-300 translate-x-full opacity-0`;
+            notification.textContent = message;
+            container.appendChild(notification);
+            setTimeout(() => notification.classList.remove('translate-x-full', 'opacity-0'), 10);
+            setTimeout(() => {
+                notification.classList.add('translate-x-full', 'opacity-0');
+                setTimeout(() => notification.remove(), 300);
+            }, 3000);
+        }
+
+        // --- Editor Enhancements ---
+        prettifyBtn.addEventListener('click', () => {
+            if (!codeEditor) return;
+            for (let i = 0; i < codeEditor.lineCount(); i++) {
+                codeEditor.indentLine(i);
+            }
+        });
+
+        let debounceTimer;
+        function debounce(func, delay) {
+            return function(...args) {
+                clearTimeout(debounceTimer);
+                debounceTimer = setTimeout(() => func.apply(this, args), delay);
+            };
+        }
+
+        // --- RESIZER LOGIC ---
+        function initResizer(resizerEl, elementToResize) {
+            resizerEl.addEventListener('mousedown', (e) => {
+                e.preventDefault();
+                const startX = e.clientX;
+                const startWidth = parseInt(document.defaultView.getComputedStyle(elementToResize).width, 10);
+                const doDrag = (e) => {
+                    const newWidth = startWidth + e.clientX - startX;
+                    if (newWidth > 150) elementToResize.style.width = newWidth + 'px';
+                };
+                const stopDrag = () => {
+                    document.body.classList.remove('is-resizing');
+                    document.removeEventListener('mousemove', doDrag);
+                    document.removeEventListener('mouseup', stopDrag);
+                };
+                document.body.classList.add('is-resizing');
+                document.addEventListener('mousemove', doDrag);
+                document.addEventListener('mouseup', stopDrag);
+            });
+        }
+        initResizer(document.getElementById('resizer-main'), document.getElementById('left-panel'));
+        initResizer(document.getElementById('resizer-vertical'), document.getElementById('file-explorer'));
+
+        // --- Drag to Root Logic ---
+        fileExplorerContainer.addEventListener('dragover', e => {
+            e.preventDefault();
+            if (e.target === fileExplorerContainer) fileExplorerContainer.style.backgroundColor = 'rgba(59, 130, 246, 0.3)';
+        });
+         fileExplorerContainer.addEventListener('dragleave', e => {
+            if (e.target === fileExplorerContainer) fileExplorerContainer.style.backgroundColor = '';
+        });
+        fileExplorerContainer.addEventListener('drop', e => {
+            e.preventDefault();
+            if (e.target !== fileExplorerContainer) return;
+            fileExplorerContainer.style.backgroundColor = '';
+            const sourcePath = e.dataTransfer.getData('text/plain');
+            if (!sourcePath || !sourcePath.includes('/')) return;
+            const sourceItem = getItem(sourcePath);
+            const sourceParent = getParent(sourcePath);
+            const sourceName = sourcePath.split('/').pop();
+            if (fileSystem[sourceName]) {
+                showNotification(`An item named "${sourceName}" already exists at the root.`, 'error');
+                return;
+            }
+            delete sourceParent[sourceName];
+            fileSystem[sourceName] = sourceItem;
+            if (activeFilePath && activeFilePath.startsWith(sourcePath)) {
+                activeFilePath = activeFilePath.substring(sourcePath.lastIndexOf('/') + 1);
+            }
+            renderFileExplorer();
+            renderPreview(); // <-- FIX: Re-render preview on drop to root
+        });
+
+        // --- Initial Load ---
+        function initialize() {
+            codeEditor = CodeMirror(editorContainer, {
+                lineNumbers: true,
+                theme: 'dracula',
+                lineWrapping: true,
+                indentUnit: tabSize,
+                indentWithTabs: false,
+                mode: 'htmlmixed',
+            });
+
+            codeEditor.on('change', () => {
+                const file = getItem(activeFilePath);
+                if (file) {
+                    file.content = codeEditor.getValue();
+                    debounce(renderPreview, 300)();
+                }
+            });
+
+            selectFile(activeFilePath);
+        }
+
+        initialize();
+
+    </script>
+</body>
+</html>
+
+
